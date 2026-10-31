@@ -1,0 +1,13 @@
+[package]
+name = "not_enough_animations"
+version = "1.0.0"
+edition = "2024"
+authors = ["CayMac"]
+description = "Brings realistic third-person animations for eating, drinking, map holding, ladder climbing, and boat rowing to Horizon."
+license = "MIT"
+repository = "https://github.com/CayMac97/not-enough-animations"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]

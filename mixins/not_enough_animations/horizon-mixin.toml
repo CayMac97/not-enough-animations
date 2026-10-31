@@ -1,0 +1,75 @@
+[mod]
+id = "not_enough_animations"
+version = "1.0.0"
+priority = 100
+
+[compatibility]
+horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
+
+[[module]]
+id = "runtime"
+file = "crates/horizon-client/src/lib.rs"
+name = "mod_not_enough_animations"
+source = "runtime.rs"
+visibility = "pub"
+
+[[module]]
+id = "glue"
+file = "crates/horizon-client/src/game.rs"
+name = "mod_not_enough_animations_glue"
+source = "glue.rs"
+
+[[injection]]
+id = "anim_setup"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::mobs::anim::setup"
+helper = "anim_setup.rs"
+bindings = [
+  { name = "m", ty = "&crate::mobs::Mob", value = "m" },
+  { name = "s", ty = "&crate::mobs::anim::State", value = "s" },
+  { name = "p", ty = "&mut crate::mobs::anim::Poses", value = "p" },
+  { name = "w_anims", ty = "&std::collections::HashMap<String, crate::mobs::keyframes::Animation>", value = "w_anims" },
+]
+
+[[injection]]
+id = "key"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_key"
+helper = "key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "&str", value = "key" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
+
+[[injection]]
+id = "list"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_mods"
+helper = "list.rs"
+bindings = [
+  { name = "mods", ty = "&mut Vec<crate::game::native_hooks::NativeMod>", value = "&mut *mods" },
+]
+
+[[injection]]
+id = "settings"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings"
+helper = "settings.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "buttons", ty = "&mut Vec<String>", value = "&mut *buttons" },
+]
+
+[[injection]]
+id = "click"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings_click"
+helper = "click.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "button", ty = "usize", value = "button" },
+]
