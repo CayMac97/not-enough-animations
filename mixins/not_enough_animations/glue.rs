@@ -1,9 +1,29 @@
 // Not Enough Animations - Glue Module
-// Connects native settings and keybinds to the animation runtime.
+// Connects native settings, frame updates, and keybinds to the animation runtime.
 
 use crate::game::Game;
 use crate::game::native_hooks::NativeMod;
 use horizon_client::mod_not_enough_animations as rt;
+
+pub(super) fn on_native_frame(game: &mut Game<'_>, _elapsed: std::time::Duration) {
+    if let (Some(m), Some(p)) = (game.player_model.as_mut(), game.player.as_ref()) {
+        let feet = [
+            p.position.x.floor() as i32,
+            p.position.y.floor() as i32,
+            p.position.z.floor() as i32,
+        ];
+        let is_climbing = !p.flying
+            && (game.block_in_tag("minecraft:climbable", &game.block_name(feet))
+                || game.block_in_tag(
+                    "minecraft:climbable",
+                    &game.block_name([feet[0], feet[1] + 1, feet[2]]),
+                )
+                || (p.last_climbable.map_or(false, |c| {
+                    c.x == feet[0] && c.z == feet[2] && (c.y - feet[1]).abs() <= 1
+                }) && !p.ground.on_ground));
+        m.climbing = is_climbing;
+    }
+}
 
 pub(super) fn on_native_mods(mods: &mut Vec<NativeMod>) {
     mods.push(NativeMod {

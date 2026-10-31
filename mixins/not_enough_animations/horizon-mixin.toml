@@ -1,6 +1,6 @@
 [mod]
 id = "not_enough_animations"
-version = "1.0.0"
+version = "1.0.1"
 priority = 100
 
 [compatibility]
@@ -30,6 +30,16 @@ bindings = [
   { name = "s", ty = "&crate::mobs::anim::State", value = "s" },
   { name = "p", ty = "&mut crate::mobs::anim::Poses", value = "p" },
   { name = "w_anims", ty = "&std::collections::HashMap<String, crate::mobs::keyframes::Animation>", value = "w_anims" },
+]
+
+[[injection]]
+id = "frame"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_frame"
+helper = "frame.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "elapsed", ty = "std::time::Duration", value = "elapsed" },
 ]
 
 [[injection]]

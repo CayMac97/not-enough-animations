@@ -1,6 +1,6 @@
 [package]
 name = "not_enough_animations"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 authors = ["CayMac"]
 description = "Brings realistic third-person animations for eating, drinking, map holding, ladder climbing, and boat rowing to Horizon."

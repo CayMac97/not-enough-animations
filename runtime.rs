@@ -1,7 +1,7 @@
 // Not Enough Animations - Runtime Module
 // Provides realistic third-person animations for players:
-// - Eating & Drinking: raises food to mouth with natural chewing motion
-// - Two-Handed Map: holds maps realistically with both hands
+// - Eating & Drinking: raises food/potion right to mouth with prominent chewing motion and head nods
+// - Two-Handed Map: holds maps realistically with both hands in front of the chest
 // - Ladder Climbing: hand-over-hand climbing animation on ladders and vines
 // - Boat Rowing: fluid oar-rowing arm movement while riding boats
 
@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const ID: &str = "not_enough_animations";
 pub const NAME: &str = "Not Enough Animations";
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "1.0.1";
 pub const DESCRIPTION: &str =
     "Brings realistic third-person animations for eating, drinking, map holding, ladder climbing, and boat rowing.";
 
@@ -88,14 +88,16 @@ fn is_eating_or_drinking(m: &crate::mobs::Mob) -> bool {
         || id.ends_with(":goat_horn"))
 }
 
+#[inline]
+fn is_map_item(item: Option<&str>) -> bool {
+    item.is_some_and(|id| id.contains("map"))
+}
+
 fn is_holding_map(m: &crate::mobs::Mob, s: &crate::mobs::anim::State) -> bool {
     if s.swing > 0.0 || m.extra.using_item > 0 {
         return false;
     }
-    let check = |item: Option<&str>| {
-        item.is_some_and(|id| id.ends_with("_map") || id == "minecraft:map")
-    };
-    check(m.extra.main_hand.as_deref()) || check(m.extra.off_hand.as_deref())
+    is_map_item(m.extra.main_hand.as_deref()) || is_map_item(m.extra.off_hand.as_deref())
 }
 
 /// Applies all enabled animations to the given poses
@@ -117,56 +119,75 @@ pub fn apply_nea(
         let arm = if is_left { "left_arm" } else { "right_arm" };
 
         let ticks = m.extra.using_item as f32 + s.partial;
-        // Natural chewing oscillation (cycles every ~7.5 frames / ~2.6 Hz)
-        let chew_wave = (ticks * 0.85).sin();
-        let chew = chew_wave * 0.055;
+        // Prominent chewing oscillation (~4 Hz)
+        let chew_wave = (ticks * 1.2).sin();
+        let chew_x = chew_wave * 0.16; // ~9.2 degrees
+        let chew_y = chew_wave * 0.08; // ~4.6 degrees
 
-        // Bring hand to mouth:
-        // xrot (pitch): lifted up towards face (-75 degrees) + head pitch tracking
-        p.xrot(arm, -1.32 + head_pitch * 0.5 + chew);
+        // Bring hand right to mouth:
+        // xrot (pitch): lifted up towards face/mouth (-100 degrees) + head pitch tracking + chewing motion
+        p.xrot(arm, -1.75 + head_pitch * 0.5 + chew_x);
 
-        // yrot (yaw): angled inward towards mouth + head yaw tracking
-        let inward_yaw = if is_left { 0.44 } else { -0.44 };
-        p.yrot(arm, inward_yaw + head_yaw * 0.5);
+        // yrot (yaw): angled inward towards mouth + head yaw tracking + chewing
+        let inward_yaw = if is_left { 0.58 } else { -0.58 };
+        let chew_side = if is_left { -chew_y } else { chew_y };
+        p.yrot(arm, inward_yaw + head_yaw * 0.35 + chew_side);
 
-        // zrot (roll): tilted slightly so the item faces the mouth
-        p.zrot(arm, if is_left { -0.28 } else { 0.28 });
+        // zrot (roll): tilted so the item faces the mouth directly
+        p.zrot(arm, if is_left { -0.32 } else { 0.32 });
 
-        // Subtle eating nod on head in sync with chewing
-        p.get("head")[3] += chew_wave.max(0.0) * 0.025;
+        // Distinctive head nod in sync with each bite / sip
+        p.get("head")[3] += chew_wave.max(0.0) * 0.09;
         return;
     }
 
     // 2. TWO-HANDED MAP HOLDING
     if maps_enabled() && is_holding_map(m, s) {
-        // Both arms raised and holding the map in front of chest
-        p.xrot("right_arm", -0.78 + head_pitch * 0.35);
-        p.yrot("right_arm", -0.28 + head_yaw * 0.35);
-        p.zrot("right_arm", 0.08);
+        let breathe = (s.age * 0.08).sin() * 0.025;
+        let has_main_map = is_map_item(m.extra.main_hand.as_deref());
+        let has_off_map = is_map_item(m.extra.off_hand.as_deref());
+        let two_handed = (has_main_map && (m.extra.off_hand.is_none() || has_off_map))
+            || (has_off_map && m.extra.main_hand.is_none());
 
-        p.xrot("left_arm", -0.78 + head_pitch * 0.35);
-        p.yrot("left_arm", 0.28 + head_yaw * 0.35);
-        p.zrot("left_arm", -0.08);
+        if two_handed || has_main_map {
+            // Right arm holding map in front of chest
+            p.xrot("right_arm", -1.25 + head_pitch * 0.4 + breathe);
+            p.yrot("right_arm", -0.45 + head_yaw * 0.35);
+            p.zrot("right_arm", 0.25);
+        }
+
+        if two_handed || has_off_map {
+            // Left arm supporting map in front of chest
+            p.xrot("left_arm", -1.25 + head_pitch * 0.4 + breathe);
+            p.yrot("left_arm", 0.45 + head_yaw * 0.35);
+            p.zrot("left_arm", -0.25);
+        }
         return;
     }
 
     // 3. LADDER & VINE CLIMBING
     if climbing_enabled() && m.climbing {
-        let climb_speed = if m.limb_speed > 0.01 { m.limb_speed } else { 0.25 };
-        let climb_cycle = (s.pos * 0.75 + s.age * 0.1).sin();
+        let is_moving = m.limb_speed > 0.01 || m.velocity.y.abs() > 0.01;
+        let climb_cycle = if is_moving {
+            // Alternating hand-over-hand cycle
+            (m.position.y as f32 * 5.0 + s.age * 0.15).sin()
+        } else {
+            0.5
+        };
 
         // Arms reach high up on the ladder rungs
-        p.xrot("right_arm", -2.35 + climb_cycle * 0.4 * climb_speed);
-        p.yrot("right_arm", 0.15);
-        p.zrot("right_arm", 0.1);
+        p.xrot("right_arm", -2.45 + climb_cycle * 0.65);
+        p.yrot("right_arm", 0.18);
+        p.zrot("right_arm", 0.12);
 
-        p.xrot("left_arm", -2.35 - climb_cycle * 0.4 * climb_speed);
-        p.yrot("left_arm", -0.15);
-        p.zrot("left_arm", -0.1);
+        p.xrot("left_arm", -2.45 - climb_cycle * 0.65);
+        p.yrot("left_arm", -0.18);
+        p.zrot("left_arm", -0.12);
 
         // Alternating leg climbing movement
-        p.xrot("right_leg", climb_cycle * 0.45 * climb_speed);
-        p.xrot("left_leg", -climb_cycle * 0.45 * climb_speed);
+        let leg_cycle = if is_moving { climb_cycle } else { 0.0 };
+        p.xrot("right_leg", leg_cycle * 0.55);
+        p.xrot("left_leg", -leg_cycle * 0.55);
         return;
     }
 
