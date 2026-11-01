@@ -1,7 +1,7 @@
 // Not Enough Animations - Runtime Module
-// Provides realistic third-person animations for players:
-// - Eating & Drinking: raises food/potion right to mouth with prominent chewing motion and head nods
-// - Two-Handed Map: holds maps realistically with both hands in front of the chest
+// Brings realistic third-person animations for players:
+// - Eating & Drinking: smoothly lifts food/potion to mouth with chewing motion and head nods
+// - Two-Handed Map: holds maps realistically in front of the chest
 // - Ladder Climbing: hand-over-hand climbing animation on ladders and vines
 // - Boat Rowing: fluid oar-rowing arm movement while riding boats
 
@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const ID: &str = "not_enough_animations";
 pub const NAME: &str = "Not Enough Animations";
-pub const VERSION: &str = "1.0.1";
+pub const VERSION: &str = "1.0.2";
 pub const DESCRIPTION: &str =
     "Brings realistic third-person animations for eating, drinking, map holding, ladder climbing, and boat rowing.";
 
@@ -18,6 +18,10 @@ static EATING: AtomicBool = AtomicBool::new(true);
 static MAPS: AtomicBool = AtomicBool::new(true);
 static CLIMBING: AtomicBool = AtomicBool::new(true);
 static BOATS: AtomicBool = AtomicBool::new(true);
+
+static IS_CLIMBING: AtomicBool = AtomicBool::new(false);
+static IN_BOAT: AtomicBool = AtomicBool::new(false);
+static BOAT_MOVING: AtomicBool = AtomicBool::new(false);
 
 #[inline]
 pub fn is_enabled() -> bool {
@@ -69,6 +73,32 @@ pub fn toggle_boats() -> bool {
     !prev
 }
 
+#[inline]
+pub fn set_climbing(val: bool) {
+    IS_CLIMBING.store(val, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn is_climbing() -> bool {
+    IS_CLIMBING.load(Ordering::Relaxed)
+}
+
+#[inline]
+pub fn set_in_boat(in_boat: bool, moving: bool) {
+    IN_BOAT.store(in_boat, Ordering::Relaxed);
+    BOAT_MOVING.store(moving, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn in_boat() -> bool {
+    IN_BOAT.load(Ordering::Relaxed)
+}
+
+#[inline]
+pub fn boat_moving() -> bool {
+    BOAT_MOVING.load(Ordering::Relaxed)
+}
+
 fn is_eating_or_drinking(m: &crate::mobs::Mob) -> bool {
     if m.extra.using_item <= 0 || m.extra.blocking {
         return false;
@@ -85,7 +115,8 @@ fn is_eating_or_drinking(m: &crate::mobs::Mob) -> bool {
         || id.ends_with(":shield")
         || id.ends_with(":brush")
         || id.ends_with(":spyglass")
-        || id.ends_with(":goat_horn"))
+        || id.ends_with(":goat_horn")
+        || id.ends_with(":spear"))
 }
 
 #[inline]
@@ -100,7 +131,7 @@ fn is_holding_map(m: &crate::mobs::Mob, s: &crate::mobs::anim::State) -> bool {
     is_map_item(m.extra.main_hand.as_deref()) || is_map_item(m.extra.off_hand.as_deref())
 }
 
-/// Applies all enabled animations to the given poses
+/// Applies enabled Not Enough Animations to the humanoid pose
 pub fn apply_nea(
     p: &mut crate::mobs::anim::Poses,
     s: &crate::mobs::anim::State,
@@ -115,29 +146,39 @@ pub fn apply_nea(
 
     // 1. EATING & DRINKING
     if eating_enabled() && is_eating_or_drinking(m) {
-        let is_left = m.extra.using_off_hand;
+        let is_left = if m.main_arm_left() {
+            !m.extra.using_off_hand
+        } else {
+            m.extra.using_off_hand
+        };
         let arm = if is_left { "left_arm" } else { "right_arm" };
 
         let ticks = m.extra.using_item as f32 + s.partial;
-        // Prominent chewing oscillation (~4 Hz)
+        // Smooth ease-in lift over first 4 ticks
+        let raise = (ticks / 4.0).min(1.0);
+        let ease = raise * raise * (3.0 - 2.0 * raise);
+
+        // Chewing / drinking motion (~4 Hz)
         let chew_wave = (ticks * 1.2).sin();
-        let chew_x = chew_wave * 0.16; // ~9.2 degrees
-        let chew_y = chew_wave * 0.08; // ~4.6 degrees
+        let chew_x = chew_wave * 0.12 * ease;
+        let chew_y = chew_wave * 0.06 * ease;
 
-        // Bring hand right to mouth:
-        // xrot (pitch): lifted up towards face/mouth (-100 degrees) + head pitch tracking + chewing motion
-        p.xrot(arm, -1.75 + head_pitch * 0.5 + chew_x);
+        // Target lifted up towards mouth
+        let target_x = -1.65 + head_pitch * 0.6 + chew_x;
+        let inward_yaw = if is_left { 0.52 } else { -0.52 };
+        let target_y = inward_yaw + head_yaw * 0.35 + (if is_left { -chew_y } else { chew_y });
+        let target_z = if is_left { -0.28 } else { 0.28 };
 
-        // yrot (yaw): angled inward towards mouth + head yaw tracking + chewing
-        let inward_yaw = if is_left { 0.58 } else { -0.58 };
-        let chew_side = if is_left { -chew_y } else { chew_y };
-        p.yrot(arm, inward_yaw + head_yaw * 0.35 + chew_side);
+        let cur_x = p.get(arm)[3];
+        let cur_y = p.get(arm)[4];
+        let cur_z = p.get(arm)[5];
 
-        // zrot (roll): tilted so the item faces the mouth directly
-        p.zrot(arm, if is_left { -0.32 } else { 0.32 });
+        p.xrot(arm, cur_x + (target_x - cur_x) * ease);
+        p.yrot(arm, cur_y + (target_y - cur_y) * ease);
+        p.zrot(arm, cur_z + (target_z - cur_z) * ease);
 
-        // Distinctive head nod in sync with each bite / sip
-        p.get("head")[3] += chew_wave.max(0.0) * 0.09;
+        // Subtle head nod in sync with chewing
+        p.get("head")[3] += chew_wave.max(0.0) * 0.08 * ease;
         return;
     }
 
@@ -166,7 +207,7 @@ pub fn apply_nea(
     }
 
     // 3. LADDER & VINE CLIMBING
-    if climbing_enabled() && m.climbing {
+    if climbing_enabled() && (is_climbing() || m.climbing) {
         let is_moving = m.limb_speed > 0.01 || m.velocity.y.abs() > 0.01;
         let climb_cycle = if is_moving {
             // Alternating hand-over-hand cycle
@@ -192,8 +233,13 @@ pub fn apply_nea(
     }
 
     // 4. BOAT ROWING
-    if boats_enabled() && m.extra.passenger {
-        let row_phase = s.age * 0.28 + s.partial * 0.28;
+    if boats_enabled() && (in_boat() || m.extra.passenger) {
+        let is_moving = boat_moving() || m.limb_speed > 0.01;
+        let row_phase = if is_moving {
+            s.age * 0.35 + s.partial * 0.35
+        } else {
+            0.0
+        };
         let row_sin = row_phase.sin();
         let row_cos = row_phase.cos();
 

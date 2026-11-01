@@ -1,6 +1,6 @@
 [mod]
 id = "not_enough_animations"
-version = "1.0.1"
+version = "1.0.2"
 priority = 100
 
 [compatibility]
@@ -21,15 +21,14 @@ source = "glue.rs"
 
 [[injection]]
 id = "anim_setup"
-kind = "HEAD"
-cancellable = true
+kind = "RETURN"
 target = "horizon_client::mobs::anim::setup"
 helper = "anim_setup.rs"
 bindings = [
+  { name = "value", ty = "()", value = "$value" },
   { name = "m", ty = "&crate::mobs::Mob", value = "m" },
   { name = "s", ty = "&crate::mobs::anim::State", value = "s" },
   { name = "p", ty = "&mut crate::mobs::anim::Poses", value = "p" },
-  { name = "w_anims", ty = "&std::collections::HashMap<String, crate::mobs::keyframes::Animation>", value = "w_anims" },
 ]
 
 [[injection]]
